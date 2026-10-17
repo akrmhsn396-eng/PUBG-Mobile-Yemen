@@ -1,0 +1,6 @@
+{
+  "name": "Vortex Vanguard 3D - Cyber Hover Combat",
+  "description": "High-octane 3D sci-fi hovercraft combat game featuring procedural PBR visuals, responsive 60fps flight physics, intense enemy encounters, and procedural audio synthesis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
