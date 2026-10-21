@@ -278,6 +278,72 @@ class SoundManager {
     osc.stop(t + 0.36);
   }
 
+  // Rotary Vulcan Minigun rapid cycle
+  public playMinigunShot() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(320, t);
+    osc.frequency.exponentialRampToValueAtTime(70, t + 0.045);
+
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.055);
+  }
+
+  // Javelin Guided Missile Launch: ignition roar & turbine whoosh
+  public playJavelinShot() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(620, t + 0.3);
+
+    gain.gain.setValueAtTime(0.65, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.46);
+  }
+
+  // Valkyrie Multi-Rocket Salvo: high-pitched shrieking micro-rockets
+  public playValkyrieShot() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(340 + Math.random() * 200, t);
+    osc.frequency.linearRampToValueAtTime(880, t + 0.12);
+
+    gain.gain.setValueAtTime(0.4, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.16);
+  }
+
   // Realistic Tactical Weapon Reload Click (Mechanical magazine insert)
   public playReload() {
     this.playReloadSound();
@@ -465,6 +531,121 @@ class SoundManager {
     gain.connect(this.sfxGain);
     osc.start(t);
     osc.stop(t + 0.22);
+  }
+
+  // Tactical Target Lock Confirmation Sound (Manual Enemy Aim)
+  public playTargetLock() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1046.5, t); // C6
+    osc.frequency.setValueAtTime(1567.98, t + 0.05); // G6
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.18);
+  }
+
+  // Environmental Hazard: Electric Water Shock Zap
+  public playElectricShock() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    // White noise spark burst
+    const bufSize = Math.floor(this.ctx.sampleRate * 0.12);
+    const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.25));
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buf;
+
+    const bq = this.ctx.createBiquadFilter();
+    bq.type = 'bandpass';
+    bq.frequency.setValueAtTime(3200, t);
+    bq.Q.setValueAtTime(4.0, t);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.35, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+    noise.connect(bq);
+    bq.connect(gain);
+    gain.connect(this.sfxGain);
+    noise.start(t);
+
+    // Rapid crackle oscillator
+    const osc = this.ctx.createOscillator();
+    const oscGain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.setValueAtTime(840, t + 0.04);
+    osc.frequency.setValueAtTime(220, t + 0.08);
+
+    oscGain.gain.setValueAtTime(0.2, t);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+
+    osc.connect(oscGain);
+    oscGain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.11);
+  }
+
+  // Environmental Hazard: Geiger Counter Clicks (Radioactive Zone)
+  public playGeigerClick(count = 3) {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    for (let i = 0; i < count; i++) {
+      const delay = Math.random() * 0.08;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1800 + Math.random() * 600, t + delay);
+
+      gain.gain.setValueAtTime(0.22, t + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.015);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(t + delay);
+      osc.stop(t + delay + 0.018);
+    }
+  }
+
+  // Environmental Hazard: Warning Klaxon
+  public playHazardWarningAlarm() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(740, t); // F#5
+    osc.frequency.setValueAtTime(580, t + 0.1); // D5
+
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.24);
   }
 
   // Airdrop Cargo Plane Flyby Siren / Drone
@@ -927,6 +1108,263 @@ class SoundManager {
     const noise = this.ctx.createBufferSource();
     noise.buffer = buffer;
     return noise;
+  }
+
+  public playKillStreak(streakLevel: number) {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const pitchMultiplier = Math.min(2.5, 1.0 + (streakLevel - 1) * 0.25);
+    
+    const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+    notes.forEach((baseFreq, idx) => {
+      const noteTime = t + idx * 0.08;
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = idx === notes.length - 1 ? 'triangle' : 'sine';
+      const freq = baseFreq * pitchMultiplier;
+      osc.frequency.setValueAtTime(freq, noteTime);
+
+      gain.gain.setValueAtTime(0.18, noteTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.25);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+
+      osc.start(noteTime);
+      osc.stop(noteTime + 0.28);
+    });
+  }
+
+  public setCombatIntensity(intensity: number) {
+    if (this.musicGain && this.ctx) {
+      const targetGain = 0.25 + intensity * 0.3;
+      this.musicGain.gain.setTargetAtTime(targetGain, this.ctx.currentTime, 0.2);
+    }
+    this.currentBpm = Math.round(120 + intensity * 35);
+  }
+
+  public playThunder() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(65, t);
+    osc.frequency.exponentialRampToValueAtTime(25, t + 1.8);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(350, t);
+    filter.frequency.exponentialRampToValueAtTime(90, t + 1.8);
+
+    gain.gain.setValueAtTime(0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.8);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start(t);
+    osc.stop(t + 1.85);
+  }
+
+  public playWindGust() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.linearRampToValueAtTime(220, t + 0.6);
+    osc.frequency.exponentialRampToValueAtTime(80, t + 1.4);
+
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(400, t);
+    filter.frequency.linearRampToValueAtTime(700, t + 0.5);
+    filter.frequency.exponentialRampToValueAtTime(250, t + 1.4);
+
+    gain.gain.setValueAtTime(0.05, t);
+    gain.gain.linearRampToValueAtTime(0.2, t + 0.5);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain);
+
+    osc.start(t);
+    osc.stop(t + 1.45);
+  }
+
+  // ========================================================
+  // HUMAN COMBATANT AUDIO (أصوات المقاتل البشري والزحف والمشاهد البانورامية)
+  // ========================================================
+
+  // Human Military Combat Footsteps on Desert Gravel / Sand
+  public playHumanFootstep(isSprint = false, isCrawl = false) {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const dur = isCrawl ? 0.22 : isSprint ? 0.09 : 0.12;
+
+    if (isCrawl) {
+      // Cloth and grit rustle on the ground (زحف على الرمال والحصى)
+      const bufSize = Math.floor(this.ctx.sampleRate * dur);
+      const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.35));
+      }
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buf;
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(850, t);
+      filter.Q.setValueAtTime(1.8, t);
+
+      const gain = this.ctx.createGain();
+      gain.gain.setValueAtTime(0.18, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.sfxGain);
+      noise.start(t);
+      return;
+    }
+
+    // Heavy tactical combat boot impact on gravel/earth
+    const bufSize = Math.floor(this.ctx.sampleRate * dur);
+    const buf = this.ctx.createBuffer(1, bufSize, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.2));
+    }
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buf;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(isSprint ? 1400 : 950, t);
+    filter.frequency.exponentialRampToValueAtTime(200, t + dur);
+
+    const gain = this.ctx.createGain();
+    const vol = isSprint ? 0.28 : 0.18;
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain);
+    noise.start(t);
+
+    // Deep sub-thump of boot heel striking earth
+    const thump = this.ctx.createOscillator();
+    const thumpGain = this.ctx.createGain();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(isSprint ? 95 : 70, t);
+    thump.frequency.exponentialRampToValueAtTime(35, t + dur);
+
+    thumpGain.gain.setValueAtTime(isSprint ? 0.22 : 0.14, t);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    thump.connect(thumpGain);
+    thumpGain.connect(this.sfxGain);
+    thump.start(t);
+    thump.stop(t + dur);
+  }
+
+  // Tactical Stance Change (Stand <-> Crouch <-> Prone)
+  public playHumanStanceChange() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    // Gear shift / tactical harness buckle click & rustle
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(320, t);
+    osc.frequency.exponentialRampToValueAtTime(140, t + 0.12);
+
+    gain.gain.setValueAtTime(0.18, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.13);
+  }
+
+  // Human Soldier Hurt / Exertion Grunt (صوت تأوه الجندي البشري عند الإصابة)
+  public playHumanGrunt() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(180, t);
+    osc.frequency.exponentialRampToValueAtTime(95, t + 0.22);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(700, t);
+    filter.frequency.exponentialRampToValueAtTime(250, t + 0.22);
+
+    gain.gain.setValueAtTime(0.3, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(t);
+    osc.stop(t + 0.24);
+  }
+
+  // Majestic Panoramic Vista Chime (رنين المشهد البانورامي السينمائي)
+  public playPanoramicVistaChime() {
+    if (this.isMuted) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const t = this.ctx.currentTime;
+    const chords = [523.25, 659.25, 783.99, 1046.5]; // C major open cinematic chord
+    chords.forEach((freq, idx) => {
+      if (!this.ctx || !this.sfxGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t + idx * 0.08);
+
+      gain.gain.setValueAtTime(0, t + idx * 0.08);
+      gain.gain.linearRampToValueAtTime(0.12, t + idx * 0.08 + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + idx * 0.08 + 1.6);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(t + idx * 0.08);
+      osc.stop(t + idx * 0.08 + 1.65);
+    });
   }
 
   public stopMusic() {

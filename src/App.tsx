@@ -39,9 +39,17 @@ const initialStats: PlayerStats = {
   reloadProgress: 0,
   isScoped: false,
   playerRigMode: 'SOLDIER',
+  playerStance: 'STAND',
   helmetLevel: 3,
   vestLevel: 3,
   killFeed: ['مرحباً بك في ساحة معركة اليمن - PUBG YEMEN'],
+  weaponHeat: 0,
+  isOverheated: false,
+  crosshairSpread: 12,
+  killEvents: [],
+  xp: 0,
+  nextLevelXp: 400,
+  playerLevel: 1,
 };
 
 export default function App() {
@@ -140,6 +148,58 @@ export default function App() {
     []
   );
 
+  const handleDeployDrone = useCallback(() => {
+    engineRef.current?.deployDrone();
+  }, []);
+
+  const handleCycleWeather = useCallback(() => {
+    engineRef.current?.cycleWeather();
+  }, []);
+
+  const handleTargetEnemy = useCallback((enemyId: number) => {
+    engineRef.current?.targetEnemyById(enemyId);
+  }, []);
+
+  const handleClearTargetLock = useCallback(() => {
+    engineRef.current?.clearTargetLock();
+  }, []);
+
+  const handleManualDragDirection = useCallback((angle: number, isMoving: boolean, autoFire?: boolean) => {
+    engineRef.current?.setManualDragDirection(angle, isMoving, autoFire);
+  }, []);
+
+  const handleManualTouchMoveTowards = useCallback((screenX: number, screenY: number, autoFire?: boolean) => {
+    engineRef.current?.manualTouchMoveTowards(screenX, screenY, autoFire);
+  }, []);
+
+  const handleStopManualMove = useCallback(() => {
+    engineRef.current?.stopManualMove();
+  }, []);
+
+  const handleStanceChange = useCallback((stance: any) => {
+    engineRef.current?.setPlayerStance(stance);
+  }, []);
+
+  const handleCallJetStrike = useCallback(() => {
+    engineRef.current?.callFighterJetStrike();
+  }, []);
+
+  const handleCallReinforcements = useCallback(() => {
+    engineRef.current?.callMilitaryReinforcements();
+  }, []);
+
+  const handleTogglePanoramic = useCallback(() => {
+    engineRef.current?.togglePanoramicMode();
+  }, []);
+
+  const handleToggleCinematic = useCallback(() => {
+    engineRef.current?.toggleCinematicLetterbox();
+  }, []);
+
+  const handleUseMedkit = useCallback(() => {
+    engineRef.current?.useMedkit();
+  }, []);
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black select-none font-sans">
       {/* Isolated Three.js WebGL Mount Point */}
@@ -178,6 +238,19 @@ export default function App() {
             onSelectWeapon={handleSelectWeapon}
             onUpgradeWeapon={handleUpgradeWeapon}
             onTeleportCity={handleTeleportCity}
+            onDeployDrone={handleDeployDrone}
+            onCycleWeather={handleCycleWeather}
+            onTargetEnemy={handleTargetEnemy}
+            onClearTargetLock={handleClearTargetLock}
+            onManualDragDirection={handleManualDragDirection}
+            onManualTouchMoveTowards={handleManualTouchMoveTowards}
+            onStopManualMove={handleStopManualMove}
+            onStanceChange={handleStanceChange}
+            onCallJetStrike={handleCallJetStrike}
+            onCallReinforcements={handleCallReinforcements}
+            onTogglePanoramic={handleTogglePanoramic}
+            onToggleCinematic={handleToggleCinematic}
+            onUseMedkit={handleUseMedkit}
           />
 
           {/* Aim-Down-Sights (ADS) Scope Reticle Overlay */}

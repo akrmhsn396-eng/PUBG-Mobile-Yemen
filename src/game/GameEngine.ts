@@ -23,8 +23,15 @@ import {
   createMonolith,
   createCrystalCluster,
   createCanyonRock,
+  createSupersonicFighterJet,
+  createArmoredPersonnelCarrier,
   ModelMaterials,
 } from './procedural/models';
+import {
+  createPanoramicSkyDome,
+  createPanoramicMountainRidge,
+  createPanoramicVantagePoints,
+} from './procedural/panoramicVista';
 import {
   createTerrainTexture,
   createRealisticTerrainTexture,
@@ -35,17 +42,37 @@ import {
 import { YEMEN_GOVERNORATES, YemenCity } from '../data/yemenGovernorates';
 import { createAllYemenBeacons, CityBeaconNode } from './procedural/yemenBeacons';
 import { WEAPON_UPGRADES, WeaponConfig } from '../data/weapons';
+import {
+  EnvironmentalHazard,
+  PlayerHazardState,
+  HazardMeshInstance,
+  PROCEDURAL_HAZARDS,
+  createHazardMesh,
+  animateHazardInstances,
+  evaluatePlayerHazardExposure,
+} from './procedural/environmentalHazards';
+import {
+  getTerrainHeight,
+  getTerrainNormal,
+  createArenaTerrainMesh,
+  createArenaBoundaryPylons,
+} from './procedural/terrainSystem';
 
 export type GamePhase = 'TITLE' | 'PLAYING' | 'PAUSED' | 'GAME_OVER' | 'VICTORY';
-export type CameraMode = 'CHASE' | 'ORBIT' | 'FREE_PAN';
+export type CameraMode = 'CHASE' | 'ORBIT' | 'FREE_PAN' | 'PANORAMIC';
 export type PlayerRigMode = 'SOLDIER' | 'BUGGY';
+export type PlayerStance = 'STAND' | 'CROUCH' | 'PRONE';
 
 export interface RadarBlip {
   id: number;
   x: number;
   z: number;
-  type: 'interceptor' | 'goliath' | 'boss' | 'soldier' | 'tank';
+  type: 'interceptor' | 'goliath' | 'boss' | 'soldier' | 'tank' | 'jet' | 'apc';
   hpRatio: number;
+  screenX?: number;
+  screenY?: number;
+  isBehind?: boolean;
+  distance?: number;
 }
 
 export interface PlayerStats {
@@ -69,6 +96,7 @@ export interface PlayerStats {
   playerHeading?: number;
   arenaRadius?: number;
   enemies?: RadarBlip[];
+  lockedTargetEnemyId?: number | null;
   selectedCity?: YemenCity;
   // Weapon Progression System & Ammo
   credits: number;
@@ -82,6 +110,15 @@ export interface PlayerStats {
   reloadProgress: number;
   isScoped: boolean;
   playerRigMode: PlayerRigMode;
+  playerStance: PlayerStance;
+  isPanoramic?: boolean;
+  isCinematicLetterbox?: boolean;
+  combatBranches?: {
+    jets: number;
+    tanks: number;
+    apcs: number;
+    soldiers: number;
+  };
   helmetLevel: number;
   vestLevel: number;
   killFeed: string[];
@@ -92,9 +129,146 @@ export interface PlayerStats {
   crosshairSpread: number;
   lastHitTime?: number;
   lastHitHeadshot?: boolean;
+  lastHitDamage?: number;
+  floatingDamage?: Array<{
+    id: number;
+    screenX: number;
+    screenY: number;
+    isBehind: boolean;
+    damage: number;
+    isHeadshot: boolean;
+    life: number;
+  }>;
   // Structured Kill Events
   killEvents: KillEvent[];
+  missionTime?: number;
+  missionCountdown?: number;
+  xp: number;
+  nextLevelXp: number;
+  playerLevel: number;
+  combatIntensity?: number;
+  combatLog?: Array<{
+    id: string;
+    text: string;
+    type: 'damage' | 'kill' | 'warning' | 'info';
+    time: number;
+  }>;
+  droneActive?: boolean;
+  droneCooldown?: number;
+  comboTimer?: number;
+  jetCooldown?: number;
+  reinforcementsCooldown?: number;
+  weather?: WeatherStats;
+  hazards?: EnvironmentalHazard[];
+  hazardState?: PlayerHazardState;
 }
+
+export type WeatherType = 'CLEAR' | 'STORMY' | 'SANDSTORM';
+
+export interface WeatherStats {
+  type: WeatherType;
+  nameAr: string;
+  nameEn: string;
+  icon: string;
+  visibilityPct: number;
+  windSpeedKmh: number;
+  windDirection: string;
+  physicsEffectAr: string;
+  nextChangeSeconds: number;
+}
+
+export const WEATHER_CONFIGS: Record<
+  WeatherType,
+  {
+    nameAr: string;
+    nameEn: string;
+    icon: string;
+    descriptionAr: string;
+    visibilityPct: number;
+    windSpeedKmh: number;
+    windDirection: string;
+    physicsEffectAr: string;
+    fogColor: THREE.Color;
+    fogDensity: number;
+    skyColor: THREE.Color;
+    sunColor: THREE.Color;
+    sunIntensity: number;
+    hemiSkyColor: THREE.Color;
+    hemiGroundColor: THREE.Color;
+    hemiIntensity: number;
+    dragMultiplier: number;
+    turnSpeedMultiplier: number;
+    accelMultiplier: number;
+    windPush: THREE.Vector3;
+  }
+> = {
+  CLEAR: {
+    nameAr: 'صحو صحراوي',
+    nameEn: 'Clear Desert',
+    icon: '☀️',
+    descriptionAr: 'رؤية كاملة واحتكاك طبيعي متوازن',
+    visibilityPct: 100,
+    windSpeedKmh: 14,
+    windDirection: 'شمالي خفيف',
+    physicsEffectAr: 'تحكم قياسي متوازن',
+    fogColor: new THREE.Color(0xd6c4a8),
+    fogDensity: 0.0075,
+    skyColor: new THREE.Color(0x8ec1e8),
+    sunColor: new THREE.Color(0xfff6e8),
+    sunIntensity: 2.8,
+    hemiSkyColor: new THREE.Color(0x8ec1e8),
+    hemiGroundColor: new THREE.Color(0x8a6e4d),
+    hemiIntensity: 1.4,
+    dragMultiplier: 1.0,
+    turnSpeedMultiplier: 1.0,
+    accelMultiplier: 1.0,
+    windPush: new THREE.Vector3(0, 0, 0),
+  },
+  STORMY: {
+    nameAr: 'عاصفة رعدية ممطرة',
+    nameEn: 'Stormy Tempest',
+    icon: '⛈️',
+    descriptionAr: 'أمطار غزيرة وصواعق - أرضية رطبة وانزلاق مائي حاد',
+    visibilityPct: 45,
+    windSpeedKmh: 68,
+    windDirection: 'جنوبي غربي',
+    physicsEffectAr: 'انزلاق مائي وانخفاض الاحتكاك (Drift)',
+    fogColor: new THREE.Color(0x242d38),
+    fogDensity: 0.022,
+    skyColor: new THREE.Color(0x1a2330),
+    sunColor: new THREE.Color(0x8ea0b8),
+    sunIntensity: 0.65,
+    hemiSkyColor: new THREE.Color(0x354354),
+    hemiGroundColor: new THREE.Color(0x1d242c),
+    hemiIntensity: 0.6,
+    dragMultiplier: 0.55,
+    turnSpeedMultiplier: 0.82,
+    accelMultiplier: 0.9,
+    windPush: new THREE.Vector3(-4.5, 0, -3.0),
+  },
+  SANDSTORM: {
+    nameAr: 'عاصفة رملية خماسين',
+    nameEn: 'Haboob Sandstorm',
+    icon: '🌪️',
+    descriptionAr: 'رياح رملية عاتية تعيق الرؤية وتدفع المركبة',
+    visibilityPct: 20,
+    windSpeedKmh: 85,
+    windDirection: 'شرقي هائج',
+    physicsEffectAr: 'مقاومة رملية وضغط رياح عاتية',
+    fogColor: new THREE.Color(0xc48443),
+    fogDensity: 0.038,
+    skyColor: new THREE.Color(0x995b28),
+    sunColor: new THREE.Color(0xdf8a3c),
+    sunIntensity: 0.85,
+    hemiSkyColor: new THREE.Color(0xb26c30),
+    hemiGroundColor: new THREE.Color(0x5a3112),
+    hemiIntensity: 0.75,
+    dragMultiplier: 1.45,
+    turnSpeedMultiplier: 0.84,
+    accelMultiplier: 0.8,
+    windPush: new THREE.Vector3(12.5, 0, 6.0),
+  },
+};
 
 export interface KillEvent {
   id: string;
@@ -124,6 +298,9 @@ interface Projectile {
   isHoming?: boolean;
   piercing?: boolean;
   color?: number;
+  isExplosive?: boolean;
+  splashRadius?: number;
+  targetEnemyId?: number;
 }
 
 interface Particle {
@@ -144,7 +321,7 @@ interface FloatingDamageNumber {
 
 interface EnemyActor {
   id: number;
-  type: 'interceptor' | 'goliath' | 'boss' | 'soldier' | 'tank';
+  type: 'interceptor' | 'goliath' | 'boss' | 'soldier' | 'tank' | 'jet' | 'apc';
   group: THREE.Group;
   hp: number;
   maxHp: number;
@@ -281,13 +458,231 @@ export class GameEngine {
   private crosshairSpread = 12;
   private lastHitTime = 0;
   private lastHitHeadshot = false;
+  private lastHitDamage = 0;
 
   // Floating Arcade Damage Numbers
-  private floatingDamageNumbers: FloatingDamageNumber[] = [];
+  private floatingDamageItems: Array<{
+    id: number;
+    worldPos: THREE.Vector3;
+    damage: number;
+    isHeadshot: boolean;
+    life: number;
+  }> = [];
 
   // Camera shake & hitstop
   private shakeIntensity = 0;
   private hitstopMs = 0;
+
+  // Mission Timer & Objective Countdown
+  private missionTime = 0;
+  private missionCountdown = 300;
+
+  // Player XP & Leveling System for Weapon Mods & Upgrades
+  private xp = 0;
+  private playerLevel = 1;
+  private nextLevelXp = 400;
+
+  private addXp(amount: number) {
+    this.xp += amount;
+    if (this.xp >= this.nextLevelXp) {
+      this.xp -= this.nextLevelXp;
+      this.playerLevel++;
+      this.nextLevelXp = Math.round(this.nextLevelXp * 1.35);
+      this.credits += 300;
+      this.killFeed.unshift(`⭐ LEVEL UP! Reached Level ${this.playerLevel}! Weapon Mods Unlocked! +300 Credits 🪙`);
+      soundManager.playPickup();
+      this.shakeIntensity = 0.3;
+    }
+  }
+
+  private combatLogMessages: Array<{
+    id: string;
+    text: string;
+    type: 'damage' | 'kill' | 'warning' | 'info';
+    time: number;
+  }> = [];
+
+  private logCombat(text: string, type: 'damage' | 'kill' | 'warning' | 'info') {
+    this.combatLogMessages.unshift({
+      id: Math.random().toString(),
+      text,
+      type,
+      time: Date.now(),
+    });
+    if (this.combatLogMessages.length > 6) {
+      this.combatLogMessages.pop();
+    }
+  }
+
+  // Tactical Drone Support System (UAV Recon)
+  private droneActive = false;
+  private droneTimer = 0;
+  private droneCooldownTimer = 0;
+  private droneMesh: THREE.Group | null = null;
+
+  public deployDrone() {
+    if (this.phase !== 'PLAYING' || this.droneActive || this.droneCooldownTimer > 0) return;
+
+    this.droneActive = true;
+    this.droneTimer = 12.0;
+    this.droneCooldownTimer = 25.0;
+
+    if (!this.droneMesh) {
+      const droneGroup = new THREE.Group();
+      const bodyGeo = new THREE.ConeGeometry(0.6, 1.2, 6);
+      bodyGeo.rotateX(Math.PI / 2);
+      const mat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, metalness: 0.8, roughness: 0.2, emissive: 0x0088ff, emissiveIntensity: 0.5 });
+      const body = new THREE.Mesh(bodyGeo, mat);
+      droneGroup.add(body);
+      this.droneMesh = droneGroup;
+      this.scene.add(this.droneMesh);
+    }
+
+    soundManager.playAirdropAlarm();
+    this.logCombat('UAV Recon Drone deployed: Enemy positions revealed!', 'info');
+    this.killFeed.unshift(`🚁 تم نشر طائرة استطلاع تكتيكية (UAV Recon) - تم الكشف عن مواقع الأعداء!`);
+  }
+
+  // Panoramic Sky & 4 War Branches Systems
+  private playerStance: PlayerStance = 'STAND';
+  private isCinematicLetterbox = false;
+  private footstepTimer = 0;
+  private crawlCycle = 0;
+  private panoramicSky: THREE.Mesh | null = null;
+  private panoramicMountains: THREE.Group | null = null;
+  private panoramicVantage: THREE.Group | null = null;
+  private panoramicPatrolJets: Array<{
+    group: THREE.Group;
+    baseAltitude: number;
+    speed: number;
+    angle: number;
+    radius: number;
+  }> = [];
+
+  // Fighter Jet Air Support System (سرب مقاتلات نفاثة)
+  private jetCooldownTimer = 0;
+  private activeJets: Array<{ group: THREE.Group; velocity: THREE.Vector3; life: number }> = [];
+
+  public callFighterJetStrike() {
+    if (this.phase !== 'PLAYING' || this.jetCooldownTimer > 0) return;
+
+    this.jetCooldownTimer = 35.0;
+
+    // Spawn 2 Supersonic Fighter Jets in tactical pincer formation
+    for (let i = 0; i < 2; i++) {
+      const jetData = createSupersonicFighterJet(this.mats);
+      const jetGroup = jetData.group;
+
+      const startX = this.playerPos.x + (i === 0 ? -85 : 85);
+      const startZ = this.playerPos.z - 75;
+      jetGroup.position.set(startX, 42, startZ);
+      jetGroup.rotation.y = i === 0 ? 0.35 : -0.35;
+      jetGroup.rotation.z = i === 0 ? -0.2 : 0.2; // banking turn
+
+      this.scene.add(jetGroup);
+      this.activeJets.push({
+        group: jetGroup,
+        velocity: new THREE.Vector3((i === 0 ? 1 : -1) * 18, -3, 62),
+        life: 4.8,
+      });
+
+      // Spawn missile smoke contrail behind jet
+      this.spawnExhaustParticle(jetGroup.position, 0x00d2ff);
+    }
+
+    // Heavy carpet bomb on all ground targets
+    this.enemies.forEach((enemy) => {
+      this.damageEnemy(enemy, 380, enemy.group.position);
+      this.spawnExplosion(enemy.group.position, 2.2);
+    });
+
+    soundManager.playAWMShot();
+    soundManager.playLaser(0.6);
+    this.logCombat('Fighter Jet CAS Airstrike executed! Mach 2 strike neutralized targets.', 'kill');
+    this.killFeed.unshift(`✈️ غارة جوية نفاثة خارقة للصوت (Supersonic CAS Jet Strike) - قصف مدمر لجميع الأهداف!`);
+    this.shakeIntensity = 0.75;
+  }
+
+  // Human Soldier Stance System (وقوف 🧍 / انحناء 🧎 / زحف 🚼)
+  public setPlayerStance(stance: PlayerStance) {
+    if (this.playerStance === stance) return;
+    this.playerStance = stance;
+    soundManager.playHumanStanceChange();
+    const stanceAr =
+      stance === 'STAND'
+        ? 'وقوف قتالي 🧍'
+        : stance === 'CROUCH'
+        ? 'انحناء تكتيكي 🧎 (ثبات +50%)'
+        : 'زحف قتالي أرضي 🚼 (ثبات قناص +85% وتخفٍ كامل)';
+    this.logCombat(`Stance changed: ${stanceAr}`, 'info');
+    this.notifyStats();
+  }
+
+  public togglePlayerStance() {
+    if (this.playerStance === 'STAND') {
+      this.setPlayerStance('CROUCH');
+    } else if (this.playerStance === 'CROUCH') {
+      this.setPlayerStance('PRONE');
+    } else {
+      this.setPlayerStance('STAND');
+    }
+  }
+
+  // Panoramic Vista Mode Toggle (المشهد البانورامي 360°)
+  public togglePanoramicMode(enabled?: boolean) {
+    const next = enabled !== undefined ? enabled : this.cameraMode !== 'PANORAMIC';
+    this.cameraMode = next ? 'PANORAMIC' : 'CHASE';
+    if (next) {
+      soundManager.playPanoramicVistaChime();
+      this.targetFov = 92;
+      this.logCombat('Panoramic Vista Mode active! 360° Theater & Mountain Horizons.', 'info');
+      this.killFeed.unshift('🔭 تفعيل المشهد البانورامي 360° - استعراض مسرح المعركة وسلاسل الجبال اليمنية!');
+    } else {
+      this.targetFov = 65;
+      this.logCombat('Standard Chase Camera restored.', 'info');
+    }
+    this.notifyStats();
+  }
+
+  // 21:9 Ultrawide Cinema Letterbox Toggle
+  public toggleCinematicLetterbox(enabled?: boolean) {
+    this.isCinematicLetterbox = enabled !== undefined ? enabled : !this.isCinematicLetterbox;
+    this.notifyStats();
+  }
+
+  // Tactical Medkit & Stim Healing
+  public useMedkit() {
+    if (this.phase !== 'PLAYING') return;
+    if (this.hp >= this.maxHp && this.energy >= this.maxEnergy) {
+      this.logCombat('Health & Stamina already at 100%!', 'info');
+      return;
+    }
+    this.hp = Math.min(this.maxHp, this.hp + 60);
+    this.energy = Math.min(this.maxEnergy, this.energy + 50);
+    soundManager.playPickup();
+    this.spawnRadialSparks(this.playerPos, 24, 0x10b981);
+    this.logCombat('Medkit Used: +60 HP, +50 Stamina Restored!', 'damage');
+    this.killFeed.unshift('💉 استخدام حقيبة إسعافات تكتيكية وأدرينالين - تعافي فوري للأنسجة واللياقة!');
+    this.notifyStats();
+  }
+
+  // Military Reinforcements System (تعزيزات عسكرية)
+  private reinforcementsCooldownTimer = 0;
+
+  public callMilitaryReinforcements() {
+    if (this.phase !== 'PLAYING' || this.reinforcementsCooldownTimer > 0) return;
+
+    this.reinforcementsCooldownTimer = 40.0;
+    this.shield = Math.min(this.maxShield, this.shield + 50);
+    this.ammo = this.maxAmmo;
+    this.reserveAmmo += 120;
+    this.credits += 500;
+
+    soundManager.playPickup();
+    this.logCombat('Military Reinforcements arrived: +50 Shield, Full Ammo, +500 Credits!', 'kill');
+    this.killFeed.unshift(`🎖️ وصول التعزيزات العسكرية الميدانية: +50 درع، ذخيرة كاملة، +500 رصيد!`);
+    this.shakeIntensity = 0.4;
+  }
 
   // Inputs
   private inputs: InputState = {
@@ -318,6 +713,7 @@ export class GameEngine {
 
   // Boss
   private bossActor: EnemyActor | null = null;
+  private lockedTargetEnemyId: number | null = null;
 
   // Environment references
   private crystalNodes: THREE.Group[] = [];
@@ -332,6 +728,24 @@ export class GameEngine {
   // 3D Yemen Territory Beacons
   private yemenBeacons: CityBeaconNode[] = [];
   private selectedCity: YemenCity = YEMEN_GOVERNORATES[0];
+
+  // Dynamic Weather System (Clear, Stormy, Sandstorm)
+  private currentWeather: WeatherType = 'CLEAR';
+  private weatherTimer = 45;
+  private lightningTimer = 8;
+  private isLightningFlashing = false;
+  private lightningFlashTime = 0;
+  private windSoundTimer = 6;
+  private rainPoints!: THREE.Points;
+  private rainGeom!: THREE.BufferGeometry;
+  private rainPositions!: Float32Array;
+  private sandPoints!: THREE.Points;
+  private sandGeom!: THREE.BufferGeometry;
+  private sandPositions!: Float32Array;
+  private currentDragMultiplier = 1.0;
+  private currentTurnSpeedMultiplier = 1.0;
+  private currentAccelMultiplier = 1.0;
+  private currentWindPush = new THREE.Vector3(0, 0, 0);
 
   constructor(
     container: HTMLElement,
@@ -470,6 +884,9 @@ export class GameEngine {
     this.shockwaveRing = new THREE.Mesh(ringGeo, ringMat);
     this.shockwaveRing.position.y = 0.1;
     this.scene.add(this.shockwaveRing);
+
+    // 6c. Dynamic Weather Particle Systems (Rain & Sandstorm)
+    this.initWeatherParticles();
 
     // 7. Build Atmospheric Yemeni Battleground Environment
     this.buildEnvironment();
@@ -628,6 +1045,207 @@ export class GameEngine {
     this.yemenBeacons.forEach((beacon) => {
       this.scene.add(beacon.group);
     });
+
+    // 10. 360° Panoramic Sky Dome & Mountain Amphitheater (المشهد البانورامي الشامل وسلاسل الجبال)
+    this.panoramicSky = createPanoramicSkyDome(320);
+    this.scene.add(this.panoramicSky);
+
+    this.panoramicMountains = createPanoramicMountainRidge(210);
+    this.scene.add(this.panoramicMountains);
+
+    const vantage = createPanoramicVantagePoints();
+    this.panoramicVantage = vantage.group;
+    this.scene.add(this.panoramicVantage);
+
+    // 11. High-Altitude Panoramic Supersonic Fighter Jets Patrol (سرب طائرات حربية نفاثة في السماء)
+    for (let j = 0; j < 2; j++) {
+      const jet = createSupersonicFighterJet(this.mats);
+      jet.group.scale.set(1.6, 1.6, 1.6);
+      this.scene.add(jet.group);
+      this.panoramicPatrolJets.push({
+        group: jet.group,
+        baseAltitude: 72 + j * 16,
+        speed: 0.28 + j * 0.08,
+        angle: j * Math.PI,
+        radius: 130 + j * 28,
+      });
+    }
+  }
+
+  private initWeatherParticles() {
+    // 1. Torrential Rain Particle System (1,200 particles)
+    const rainCount = 1200;
+    this.rainPositions = new Float32Array(rainCount * 3);
+    for (let i = 0; i < rainCount; i++) {
+      this.rainPositions[i * 3 + 0] = (Math.random() - 0.5) * 90;
+      this.rainPositions[i * 3 + 1] = Math.random() * 45;
+      this.rainPositions[i * 3 + 2] = (Math.random() - 0.5) * 90;
+    }
+    this.rainGeom = new THREE.BufferGeometry();
+    this.rainGeom.setAttribute('position', new THREE.BufferAttribute(this.rainPositions, 3));
+    const rainMat = new THREE.PointsMaterial({
+      color: 0x9dc7f5,
+      size: 0.38,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.rainPoints = new THREE.Points(this.rainGeom, rainMat);
+    this.rainPoints.visible = false;
+    this.scene.add(this.rainPoints);
+
+    // 2. Swirling Sandstorm Particle System (1,500 dust particles)
+    const sandCount = 1500;
+    this.sandPositions = new Float32Array(sandCount * 3);
+    for (let i = 0; i < sandCount; i++) {
+      this.sandPositions[i * 3 + 0] = (Math.random() - 0.5) * 90;
+      this.sandPositions[i * 3 + 1] = Math.random() * 22 + 0.2;
+      this.sandPositions[i * 3 + 2] = (Math.random() - 0.5) * 90;
+    }
+    this.sandGeom = new THREE.BufferGeometry();
+    this.sandGeom.setAttribute('position', new THREE.BufferAttribute(this.sandPositions, 3));
+    const sandMat = new THREE.PointsMaterial({
+      color: 0xd99b54,
+      size: 0.65,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    this.sandPoints = new THREE.Points(this.sandGeom, sandMat);
+    this.sandPoints.visible = false;
+    this.scene.add(this.sandPoints);
+  }
+
+  private updateWeather(dt: number, time: number) {
+    // 1. Natural Weather Cycle Progression (every 45s)
+    this.weatherTimer -= dt;
+    if (this.weatherTimer <= 0) {
+      const order: WeatherType[] = ['CLEAR', 'STORMY', 'SANDSTORM'];
+      const nextIdx = (order.indexOf(this.currentWeather) + 1) % order.length;
+      this.setWeather(order[nextIdx]);
+    }
+
+    const config = WEATHER_CONFIGS[this.currentWeather];
+
+    // 2. Smoothly damp Fog, Sky & Sunlight to target parameters
+    if (this.scene.fog instanceof THREE.FogExp2) {
+      this.scene.fog.density = THREE.MathUtils.damp(this.scene.fog.density, config.fogDensity, 1.2, dt);
+      this.scene.fog.color.lerp(config.fogColor, dt * 1.5);
+    }
+    if (this.scene.background instanceof THREE.Color) {
+      this.scene.background.lerp(config.skyColor, dt * 1.5);
+    }
+
+    // Lightning Flash Effect during Storm
+    if (this.currentWeather === 'STORMY') {
+      this.lightningTimer -= dt;
+      if (this.lightningTimer <= 0) {
+        this.lightningTimer = 6 + Math.random() * 8;
+        this.isLightningFlashing = true;
+        this.lightningFlashTime = 0.12;
+        soundManager.playThunder();
+        this.shakeIntensity = Math.max(this.shakeIntensity, 0.35);
+      }
+      if (this.isLightningFlashing) {
+        this.lightningFlashTime -= dt;
+        if (this.lightningFlashTime <= 0) {
+          this.isLightningFlashing = false;
+        }
+      }
+    } else {
+      this.isLightningFlashing = false;
+    }
+
+    const targetSunIntensity = this.isLightningFlashing ? 6.5 : config.sunIntensity;
+    const targetSunColor = this.isLightningFlashing ? new THREE.Color(0xddeeff) : config.sunColor;
+
+    this.keyLight.color.lerp(targetSunColor, dt * 2.5);
+    this.keyLight.intensity = THREE.MathUtils.damp(this.keyLight.intensity, targetSunIntensity, 2.0, dt);
+    this.hemiLight.color.lerp(config.hemiSkyColor, dt * 1.5);
+    this.hemiLight.groundColor.lerp(config.hemiGroundColor, dt * 1.5);
+    this.hemiLight.intensity = THREE.MathUtils.damp(this.hemiLight.intensity, config.hemiIntensity, 1.2, dt);
+
+    // 3. Audio Cues for Sandstorm
+    if (this.currentWeather === 'SANDSTORM') {
+      this.windSoundTimer -= dt;
+      if (this.windSoundTimer <= 0) {
+        this.windSoundTimer = 5 + Math.random() * 6;
+        soundManager.playWindGust();
+      }
+    }
+
+    // 4. Update Rain Particles
+    this.rainPoints.visible = this.currentWeather === 'STORMY';
+    if (this.rainPoints.visible) {
+      const pos = this.rainPositions;
+      const count = pos.length / 3;
+      const pX = this.playerPos.x;
+      const pZ = this.playerPos.z;
+      for (let i = 0; i < count; i++) {
+        pos[i * 3 + 1] -= 54 * dt;
+        pos[i * 3 + 0] -= 12 * dt;
+        pos[i * 3 + 2] -= 8 * dt;
+
+        if (pos[i * 3 + 1] < 0) pos[i * 3 + 1] = 42;
+        if (pos[i * 3 + 0] < pX - 45) pos[i * 3 + 0] = pX + 45;
+        if (pos[i * 3 + 0] > pX + 45) pos[i * 3 + 0] = pX - 45;
+        if (pos[i * 3 + 2] < pZ - 45) pos[i * 3 + 2] = pZ + 45;
+        if (pos[i * 3 + 2] > pZ + 45) pos[i * 3 + 2] = pZ - 45;
+      }
+      this.rainGeom.attributes.position.needsUpdate = true;
+    }
+
+    // 5. Update Sandstorm Dust Particles
+    this.sandPoints.visible = this.currentWeather === 'SANDSTORM';
+    if (this.sandPoints.visible) {
+      const pos = this.sandPositions;
+      const count = pos.length / 3;
+      const pX = this.playerPos.x;
+      const pZ = this.playerPos.z;
+      for (let i = 0; i < count; i++) {
+        pos[i * 3 + 0] += 34 * dt;
+        pos[i * 3 + 2] += 16 * dt;
+        pos[i * 3 + 1] += Math.sin(time * 3 + i) * 2 * dt;
+
+        if (pos[i * 3 + 0] > pX + 50) pos[i * 3 + 0] = pX - 50;
+        if (pos[i * 3 + 2] > pZ + 50) pos[i * 3 + 2] = pZ - 50;
+        if (pos[i * 3 + 1] < 0.2) pos[i * 3 + 1] = 20;
+        if (pos[i * 3 + 1] > 22) pos[i * 3 + 1] = 0.5;
+      }
+      this.sandGeom.attributes.position.needsUpdate = true;
+    }
+
+    // 6. Smooth Physics Modifiers
+    this.currentDragMultiplier = THREE.MathUtils.damp(this.currentDragMultiplier, config.dragMultiplier, 2.0, dt);
+    this.currentTurnSpeedMultiplier = THREE.MathUtils.damp(this.currentTurnSpeedMultiplier, config.turnSpeedMultiplier, 2.0, dt);
+    this.currentAccelMultiplier = THREE.MathUtils.damp(this.currentAccelMultiplier, config.accelMultiplier, 2.0, dt);
+    this.currentWindPush.lerp(config.windPush, dt * 2.0);
+  }
+
+  public setWeather(type: WeatherType) {
+    this.currentWeather = type;
+    this.weatherTimer = 45;
+    
+    if (type === 'STORMY') {
+      this.killFeed.unshift(`⛈️ تحذير جوي: عاصفة رعدية ممطرة! انزلاق مائي وضعف التماسك.`);
+      this.logCombat('Weather Alert: Stormy tempest active! Wet ground and increased drift.', 'warning');
+      soundManager.playThunder();
+    } else if (type === 'SANDSTORM') {
+      this.killFeed.unshift(`🌪️ إنذار عاصفة خماسين: عاصفة رملية عاتية! انعدام الرؤية ومقاومة حركية وضغط رياح.`);
+      this.logCombat('Weather Alert: Haboob Sandstorm active! Low visibility and heavy wind drag.', 'warning');
+      soundManager.playWindGust();
+    } else {
+      this.killFeed.unshift(`☀️ استقرار الأجواء: طقس صحراوي صافٍ! الرؤية كاملة والتحكم قياسي متوازن.`);
+      this.logCombat('Weather Update: Clear skies restored. Optimal visibility and traction.', 'info');
+    }
+    this.notifyStats();
+  }
+
+  public cycleWeather() {
+    const order: WeatherType[] = ['CLEAR', 'STORMY', 'SANDSTORM'];
+    const nextIdx = (order.indexOf(this.currentWeather) + 1) % order.length;
+    this.setWeather(order[nextIdx]);
   }
 
   private setupListeners() {
@@ -636,11 +1254,32 @@ export class GameEngine {
     window.addEventListener('blur', this.handleBlur);
     window.addEventListener('resize', this.handleResize);
 
-    // Mouse fire & ADS scope
+    // Mouse fire & ADS scope & pointer aim
     this.container.addEventListener('mousedown', this.handleMouseDown);
     this.container.addEventListener('mouseup', this.handleMouseUp);
+    this.container.addEventListener('mousemove', this.handleMouseMove);
+    this.container.addEventListener('touchmove', this.handleTouchMove);
     this.container.addEventListener('contextmenu', (e) => e.preventDefault());
   }
+
+  private handleMouseMove = (e: MouseEvent) => {
+    if (this.phase !== 'PLAYING') return;
+    const rect = this.container.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    const targetRot = Math.atan2(mouseX, mouseY);
+    this.playerRot = THREE.MathUtils.lerp(this.playerRot, targetRot, 0.18);
+  };
+
+  private handleTouchMove = (e: TouchEvent) => {
+    if (this.phase !== 'PLAYING' || e.touches.length === 0) return;
+    const touch = e.touches[0];
+    const rect = this.container.getBoundingClientRect();
+    const touchX = ((touch.clientX - rect.left) / rect.width) * 2 - 1;
+    const touchY = -((touch.clientY - rect.top) / rect.height) * 2 + 1;
+    const targetRot = Math.atan2(touchX, touchY);
+    this.playerRot = THREE.MathUtils.lerp(this.playerRot, targetRot, 0.22);
+  };
 
   private handleKeyDown = (e: KeyboardEvent) => {
     // If on title screen, Enter or Space starts the game
@@ -678,6 +1317,14 @@ export class GameEngine {
     if (e.code === 'KeyQ' || e.code === 'KeyE') {
       this.triggerEMP();
     }
+    if (e.code === 'KeyF' && this.phase === 'PLAYING') {
+      e.preventDefault();
+      this.deployDrone();
+    }
+    if (e.code === 'KeyB' && this.phase === 'PLAYING') {
+      e.preventDefault();
+      this.callFighterJetStrike();
+    }
 
     // PUBG Reload Key: 'R'
     if (e.code === 'KeyR' && this.phase === 'PLAYING') {
@@ -692,6 +1339,33 @@ export class GameEngine {
     // PUBG Rig Mode Toggle Key: 'T' (Switch Soldier / Buggy)
     if (e.code === 'KeyT' && this.phase === 'PLAYING') {
       this.togglePlayerRigMode();
+    }
+
+    // Dynamic Weather Cycle Key: 'G'
+    if (e.code === 'KeyG' && this.phase === 'PLAYING') {
+      this.cycleWeather();
+    }
+
+    // Human Soldier Stance: 'C' (Crouch/Stand toggle), 'Z' (Prone Crawl)
+    if (e.code === 'KeyC' && this.phase === 'PLAYING') {
+      e.preventDefault();
+      this.togglePlayerStance();
+    }
+    if (e.code === 'KeyZ' && this.phase === 'PLAYING') {
+      e.preventDefault();
+      this.setPlayerStance(this.playerStance === 'PRONE' ? 'STAND' : 'PRONE');
+    }
+
+    // Panoramic 360° Vista Mode Key: 'X'
+    if (e.code === 'KeyX' && this.phase === 'PLAYING') {
+      e.preventDefault();
+      this.togglePanoramicMode();
+    }
+
+    // Tactical Medkit Key: 'H'
+    if (e.code === 'KeyH' && this.phase === 'PLAYING') {
+      e.preventDefault();
+      this.useMedkit();
     }
 
     // Numeric Weapon Quick Switch Keys 1-5
@@ -781,6 +1455,24 @@ export class GameEngine {
     this.comboTimer = 0;
     this.wave = 1;
     this.kills = 0;
+    this.missionTime = 0;
+    this.missionCountdown = 300;
+    this.xp = 0;
+    this.playerLevel = 1;
+    this.nextLevelXp = 400;
+    this.combatLogMessages = [];
+    this.logCombat('Mission Started: Yemen Sector 1', 'info');
+    this.droneActive = false;
+    this.droneTimer = 0;
+    this.droneCooldownTimer = 0;
+    if (this.droneMesh) {
+      this.scene.remove(this.droneMesh);
+      this.droneMesh = null;
+    }
+    this.jetCooldownTimer = 0;
+    this.activeJets.forEach((j) => this.scene.remove(j.group));
+    this.activeJets = [];
+    this.setWeather('CLEAR');
     this.playerPos.set(0, 0, 0);
     this.playerVel.set(0, 0, 0);
     this.playerRot = 0;
@@ -806,6 +1498,104 @@ export class GameEngine {
 
   public setVirtualInput(input: Partial<InputState>) {
     Object.assign(this.inputs, input);
+  }
+
+  // Direct manual targeting on enemy by ID (توجيه يدوي مباشر على العدو)
+  public targetEnemyById(enemyId: number, autoAdvance: boolean = true) {
+    if (this.phase !== 'PLAYING') return;
+    const target = this.enemies.find((e) => e.id === enemyId);
+    if (!target) return;
+
+    this.lockedTargetEnemyId = enemyId;
+    const dx = target.group.position.x - this.playerPos.x;
+    const dz = target.group.position.z - this.playerPos.z;
+    this.playerRot = Math.atan2(dx, dz);
+
+    if (autoAdvance) {
+      this.inputs.forward = true;
+      this.inputs.fire = true;
+      setTimeout(() => {
+        // Stop continuous firing pulse after 350ms, keep moving
+        this.inputs.fire = false;
+      }, 350);
+    }
+
+    soundManager.playTargetLock();
+    const typeAr =
+      target.type === 'boss'
+        ? 'الزعيم دبابة القلعة الخارقة'
+        : target.type === 'tank'
+        ? 'دبابة مدرعة'
+        : 'جندي مشاة';
+    const dist = Math.round(this.playerPos.distanceTo(target.group.position));
+    this.logCombat(`🎯 استهداف يدوي مباشر: ${typeAr} (${dist}م)`, 'info');
+    this.notifyStats();
+  }
+
+  public clearTargetLock() {
+    this.lockedTargetEnemyId = null;
+    this.notifyStats();
+  }
+
+  // Direct manual drag direction steering (سحب يدوي حر بدل الأزرار)
+  public setManualDragDirection(angle: number, isMoving: boolean, autoFire: boolean = false) {
+    if (this.phase !== 'PLAYING') return;
+    if (isMoving) {
+      this.playerRot = angle;
+      this.inputs.forward = true;
+      if (autoFire) {
+        this.inputs.fire = true;
+      }
+    } else {
+      this.inputs.forward = false;
+      this.inputs.fire = false;
+    }
+  }
+
+  // Direct touch on 3D battlefield plane or on enemy (لمس الشاشة للتوجيه والتحرك نحو العدو)
+  public manualTouchMoveTowards(screenX: number, screenY: number, autoFire: boolean = false) {
+    if (this.phase !== 'PLAYING') return;
+    const rect = this.container.getBoundingClientRect();
+    const ndcX = ((screenX - rect.left) / rect.width) * 2 - 1;
+    const ndcY = -((screenY - rect.top) / rect.height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const targetPoint = new THREE.Vector3();
+    const hit = raycaster.ray.intersectPlane(groundPlane, targetPoint);
+
+    if (hit) {
+      // Check if tap was near an enemy (within 8 units)
+      let nearestEnemy: EnemyActor | null = null;
+      let minEnemyDist = 8.0;
+      for (const enemy of this.enemies) {
+        const d = targetPoint.distanceTo(enemy.group.position);
+        if (d < minEnemyDist) {
+          minEnemyDist = d;
+          nearestEnemy = enemy;
+        }
+      }
+
+      if (nearestEnemy) {
+        this.targetEnemyById(nearestEnemy.id, true);
+        return;
+      }
+
+      // Rotate player directly towards tapped position and move forward
+      const dx = targetPoint.x - this.playerPos.x;
+      const dz = targetPoint.z - this.playerPos.z;
+      this.playerRot = Math.atan2(dx, dz);
+      this.inputs.forward = true;
+      if (autoFire) {
+        this.inputs.fire = true;
+      }
+    }
+  }
+
+  public stopManualMove() {
+    this.inputs.forward = false;
+    this.inputs.fire = false;
   }
 
   public triggerEMP() {
@@ -870,25 +1660,34 @@ export class GameEngine {
   private spawnWave(waveNum: number) {
     this.wave = waveNum;
 
-    // Trigger Airdrop supply drop in wave 2 and 3!
     if (waveNum >= 2) {
       soundManager.playAirdropAlarm();
       this.killFeed.unshift(`🚨 تم رصد إسقاط جوي تكتيكي (Airdrop) في سماء المعركة!`);
     }
 
-    if (waveNum === 4) {
-      // BOSS WAVE: Citadel Super Heavy Battle Tank!
+    if (waveNum === 7) {
+      // FINAL BOSS WAVE: Citadel Super Dreadnought Mega Tank!
       this.spawnBoss();
+      this.killFeed.unshift(`⚠️ إنذار أحمر: ظهور دبابة القلعة الخارقة العملاقة (Citadel Dreadnought Super Tank)!`);
       return;
     }
 
-    // Number of human soldiers and heavy tanks
-    const numSoldiers = 4 + waveNum * 2;
-    const numTanks = Math.max(0, waveNum - 1);
+    const titles = [
+      'الموجة 1: دورية الطليعة الاستطلاعية (Vanguard Patrol)',
+      'الموجة 2: أرتال الدبابات المدرعة الصحراوية (Armor Column)',
+      'الموجة 3: غارة الكوماندوز النخبة (Elite Commando Raid)',
+      'الموجة 4: حصار القلعة والمدفعية الثقيلة (Citadel Siege)',
+      'الموجة 5: الهجوم الميكانيكي الشامل (Mechanized Assault)',
+      'الموجة 6: كمين عاصفة الصحراء النارية (Sandstorm Ambush)',
+    ];
+
+    const numSoldiers = 4 + waveNum * 3;
+    const numTanks = Math.max(1, Math.floor(waveNum / 2));
+    const numAPCs = waveNum >= 2 ? Math.max(1, Math.floor(waveNum / 2)) : 0;
 
     for (let i = 0; i < numSoldiers; i++) {
       const angle = (i / numSoldiers) * Math.PI * 2 + Math.random() * 0.4;
-      const dist = 32 + Math.random() * 25;
+      const dist = 30 + Math.random() * 28;
       const x = this.playerPos.x + Math.cos(angle) * dist;
       const z = this.playerPos.z + Math.sin(angle) * dist;
       this.spawnSoldier(x, z);
@@ -896,13 +1695,21 @@ export class GameEngine {
 
     for (let i = 0; i < numTanks; i++) {
       const angle = ((i + 0.5) / (numTanks + 0.1)) * Math.PI * 2;
-      const dist = 42 + Math.random() * 18;
+      const dist = 40 + Math.random() * 20;
       const x = this.playerPos.x + Math.cos(angle) * dist;
       const z = this.playerPos.z + Math.sin(angle) * dist;
       this.spawnTank(x, z);
     }
 
-    this.killFeed.unshift(`⚔️ بدأت الموجة ${waveNum}: تقدم أرتال المشاة والدبابات!`);
+    for (let i = 0; i < numAPCs; i++) {
+      const angle = ((i + 0.25) / (numAPCs + 0.1)) * Math.PI * 2;
+      const dist = 38 + Math.random() * 18;
+      const x = this.playerPos.x + Math.cos(angle) * dist;
+      const z = this.playerPos.z + Math.sin(angle) * dist;
+      this.spawnAPC(x, z);
+    }
+
+    this.killFeed.unshift(`⚔️ ${titles[waveNum - 1] || `الموجة ${waveNum}`} بدأت!`);
   }
 
   private spawnSoldier(x: number, z: number) {
@@ -943,6 +1750,24 @@ export class GameEngine {
       turret: data.turret,
       barrel: data.barrel,
       aimTelegraph: data.aimTelegraph,
+    });
+  }
+
+  private spawnAPC(x: number, z: number) {
+    const data = createArmoredPersonnelCarrier(this.mats);
+    data.group.position.set(x, 0, z);
+    this.scene.add(data.group);
+
+    this.enemies.push({
+      id: this.enemyIdCounter++,
+      type: 'apc',
+      group: data.group,
+      hp: 140 + this.wave * 35,
+      maxHp: 140 + this.wave * 35,
+      speed: 6.8,
+      fireCooldown: 2.2,
+      telegraphTimer: 0,
+      turret: data.turret,
     });
   }
 
@@ -1041,6 +1866,62 @@ export class GameEngine {
   }
 
   private updateGame(dt: number, time: number) {
+    this.missionTime += dt;
+    this.missionCountdown = Math.max(0, this.missionCountdown - dt);
+
+    // Dynamic Weather Cycle & Atmospheric Simulation
+    this.updateWeather(dt, time);
+
+    // UAV Drone update
+    if (this.droneActive) {
+      this.droneTimer -= dt;
+      if (this.droneMesh) {
+        const angle = time * 2.5;
+        const dx = Math.cos(angle) * 14;
+        const dz = Math.sin(angle) * 14;
+        this.droneMesh.position.set(this.playerPos.x + dx, 9 + Math.sin(time * 4) * 1.5, this.playerPos.z + dz);
+        this.droneMesh.rotation.y = -angle;
+      }
+      if (this.droneTimer <= 0) {
+        this.droneActive = false;
+        if (this.droneMesh) {
+          this.scene.remove(this.droneMesh);
+          this.droneMesh = null;
+        }
+        this.logCombat('UAV Recon Drone returned to base.', 'info');
+      }
+    }
+    if (this.droneCooldownTimer > 0) {
+      this.droneCooldownTimer -= dt;
+    }
+
+    // Fighter Jets update
+    if (this.jetCooldownTimer > 0) {
+      this.jetCooldownTimer -= dt;
+    }
+    if (this.reinforcementsCooldownTimer > 0) {
+      this.reinforcementsCooldownTimer -= dt;
+    }
+    for (let i = this.activeJets.length - 1; i >= 0; i--) {
+      const jet = this.activeJets[i];
+      jet.life -= dt;
+      jet.group.position.addScaledVector(jet.velocity, dt);
+      if (jet.life <= 0) {
+        this.scene.remove(jet.group);
+        this.activeJets.splice(i, 1);
+      }
+    }
+
+    // Panoramic Patrol Jets High in Sky
+    this.panoramicPatrolJets.forEach((jet) => {
+      jet.angle += jet.speed * dt * 0.4;
+      jet.group.position.x = Math.cos(jet.angle) * jet.radius;
+      jet.group.position.z = Math.sin(jet.angle) * jet.radius;
+      jet.group.position.y = jet.baseAltitude + Math.sin(jet.angle * 2) * 4;
+      jet.group.rotation.y = -jet.angle + Math.PI / 2;
+      jet.group.rotation.z = -0.18;
+    });
+
     // 1. Player Movement & Physics
     this.updatePlayer(dt, time);
 
@@ -1053,8 +1934,24 @@ export class GameEngine {
     // 4. Enemies AI & Telegraphs
     this.updateEnemies(dt, time);
 
-    // 5. Particles & Visual FX
+    // 5. Particles & Visual FX & Floating Damage
     this.updateParticles(dt);
+    this.updateFloatingDamage(dt);
+
+    // Decay recoil spread & update dynamic crosshair spread
+    this.recoilSpread = Math.max(0, this.recoilSpread - dt * 25);
+    const isMoving = this.inputs.forward || this.inputs.backward || this.inputs.left || this.inputs.right;
+    const isBoosting = this.inputs.boost;
+    let baseSpread = 10;
+    if (isBoosting) baseSpread = 26;
+    else if (isMoving) baseSpread = 16;
+    
+    this.crosshairSpread = THREE.MathUtils.damp(
+      this.crosshairSpread,
+      baseSpread + this.recoilSpread,
+      14,
+      dt
+    );
 
     // 6. Collectibles
     this.updateCollectibles(dt, time);
@@ -1101,7 +1998,7 @@ export class GameEngine {
 
     // 10. Check Wave Progression
     if (this.enemies.length === 0) {
-      if (this.wave === 4 && (!this.bossActor || this.bossActor.hp <= 0)) {
+      if (this.wave === 7 && (!this.bossActor || this.bossActor.hp <= 0)) {
         // Victory!
         this.phase = 'VICTORY';
         soundManager.playPickup();
@@ -1117,40 +2014,88 @@ export class GameEngine {
   }
 
   private updatePlayer(dt: number, time: number) {
-    // Steer / Rotate
-    const turnSpeed = 3.2;
+    // Steer / Rotate (modified by weather traction)
+    const turnSpeed = 4.5 * this.currentTurnSpeedMultiplier;
     if (this.inputs.left) {
       this.playerRot += turnSpeed * dt;
-      this.playerRoll = THREE.MathUtils.damp(this.playerRoll, -0.3, 10, dt);
+      this.playerRoll = THREE.MathUtils.damp(this.playerRoll, -0.3, 12, dt);
     } else if (this.inputs.right) {
       this.playerRot -= turnSpeed * dt;
-      this.playerRoll = THREE.MathUtils.damp(this.playerRoll, 0.3, 10, dt);
+      this.playerRoll = THREE.MathUtils.damp(this.playerRoll, 0.3, 12, dt);
     } else {
-      this.playerRoll = THREE.MathUtils.damp(this.playerRoll, 0, 8, dt);
+      this.playerRoll = THREE.MathUtils.damp(this.playerRoll, 0, 10, dt);
+    }
+
+    // Manual Enemy Target Lock Tracking (توجيه يدوي مباشر ومستمر نحو العدو المحدد)
+    if (this.lockedTargetEnemyId !== null) {
+      const lockedEnemy = this.enemies.find((e) => e.id === this.lockedTargetEnemyId);
+      if (lockedEnemy && lockedEnemy.hp > 0) {
+        const dx = lockedEnemy.group.position.x - this.playerGroup.position.x;
+        const dz = lockedEnemy.group.position.z - this.playerGroup.position.z;
+        const enemyAngle = Math.atan2(dx, dz);
+        this.playerRot = THREE.MathUtils.lerp(this.playerRot, enemyAngle, 0.35);
+      } else {
+        this.lockedTargetEnemyId = null;
+      }
+    }
+
+    // Smart Auto-Aim towards nearest enemy when firing or pointing
+    if (this.inputs.fire && this.enemies.length > 0 && this.lockedTargetEnemyId === null) {
+      let nearestEnemy: EnemyActor | null = null;
+      let minDist = Infinity;
+      for (const enemy of this.enemies) {
+        const d = this.playerGroup.position.distanceTo(enemy.group.position);
+        if (d < minDist) {
+          minDist = d;
+          nearestEnemy = enemy;
+        }
+      }
+      if (nearestEnemy && minDist < 60) {
+        const targetPos = nearestEnemy.group.position;
+        const dx = targetPos.x - this.playerGroup.position.x;
+        const dz = targetPos.z - this.playerGroup.position.z;
+        const enemyAngle = Math.atan2(dx, dz);
+        this.playerRot = THREE.MathUtils.lerp(this.playerRot, enemyAngle, 0.25);
+      }
     }
 
     // Acceleration & Boost (Tactical Sprint)
     let accel = 0;
     const isSoldier = this.playerRigMode === 'SOLDIER';
-    let maxSpeed = isSoldier ? 14 : 26;
+    let maxSpeed = isSoldier ? 17 : 28;
+
+    // Stance Speed Multiplier & Recoil Stabilization
+    if (isSoldier) {
+      if (this.playerStance === 'CROUCH') {
+        maxSpeed *= 0.7;
+        this.crosshairSpread = Math.min(this.crosshairSpread, 0.4);
+      } else if (this.playerStance === 'PRONE') {
+        maxSpeed *= 0.38; // Crawling speed
+        this.crosshairSpread = Math.min(this.crosshairSpread, 0.12); // Rock solid prone sniper stability
+      }
+    }
+
+    // Weather impact on max speed
+    const weatherMaxSpeedMod = this.currentWeather === 'SANDSTORM' ? 0.88 : (this.currentWeather === 'STORMY' ? 1.05 : 1.0);
+    maxSpeed *= weatherMaxSpeedMod;
 
     const isBoosting = this.inputs.boost && this.energy > 8;
     if (isBoosting) {
-      maxSpeed = isSoldier ? 22 : 42;
-      this.energy = Math.max(0, this.energy - dt * 28);
+      maxSpeed = isSoldier ? (this.playerStance === 'PRONE' ? 9 : 25) : 45;
+      this.energy = Math.max(0, this.energy - dt * 26);
       if (Math.random() < 0.25) {
         soundManager.playBoost();
       }
     }
 
     if (this.inputs.forward) {
-      accel = isBoosting ? (isSoldier ? 48 : 70) : (isSoldier ? 30 : 42);
-      this.playerPitch = THREE.MathUtils.damp(this.playerPitch, 0.1, 8, dt);
+      accel = (isBoosting ? (isSoldier ? 55 : 75) : (isSoldier ? 36 : 48)) * this.currentAccelMultiplier;
+      this.playerPitch = THREE.MathUtils.damp(this.playerPitch, 0.1, 10, dt);
     } else if (this.inputs.backward) {
-      accel = isSoldier ? -18 : -22;
-      this.playerPitch = THREE.MathUtils.damp(this.playerPitch, -0.08, 8, dt);
+      accel = (isSoldier ? -22 : -26) * this.currentAccelMultiplier;
+      this.playerPitch = THREE.MathUtils.damp(this.playerPitch, -0.08, 10, dt);
     } else {
-      this.playerPitch = THREE.MathUtils.damp(this.playerPitch, 0, 8, dt);
+      this.playerPitch = THREE.MathUtils.damp(this.playerPitch, 0, 10, dt);
     }
 
     // Forward direction vector
@@ -1158,8 +2103,12 @@ export class GameEngine {
     _vecB.copy(_vecA).multiplyScalar(accel * dt);
     this.playerVel.add(_vecB);
 
-    // Realistic ground friction
-    const drag = isBoosting ? 2.4 : 3.2;
+    // Weather Wind Push Force
+    this.playerVel.addScaledVector(this.currentWindPush, dt);
+
+    // Realistic ground friction modified by weather condition
+    const baseDrag = isBoosting ? 2.4 : 3.2;
+    const drag = baseDrag * this.currentDragMultiplier;
     this.playerVel.multiplyScalar(Math.max(0, 1 - drag * dt));
 
     // Clamp max velocity
@@ -1184,15 +2133,66 @@ export class GameEngine {
     this.playerGroup.position.set(this.playerPos.x, 0, this.playerPos.z);
     this.playerGroup.rotation.set(0, this.playerRot, 0);
 
-    if (isSoldier) {
-      // Dynamic running leg stride cycle
-      if (speed > 0.4) {
-        this.runCycle += dt * (isBoosting ? 16 : 10);
-        if (this.soldierLeftLeg) this.soldierLeftLeg.rotation.x = Math.sin(this.runCycle) * 0.75;
-        if (this.soldierRightLeg) this.soldierRightLeg.rotation.x = -Math.sin(this.runCycle) * 0.75;
+    if (isSoldier && this.soldierGroup) {
+      if (this.playerStance === 'PRONE') {
+        // Prone Crawling: Lower body down to ground level and pitch horizontal
+        this.soldierGroup.position.y = THREE.MathUtils.damp(this.soldierGroup.position.y, 0.22, 12, dt);
+        this.soldierGroup.rotation.x = THREE.MathUtils.damp(this.soldierGroup.rotation.x, -Math.PI / 2.25, 12, dt);
+
+        if (speed > 0.1) {
+          this.crawlCycle += dt * 7.5;
+          if (this.soldierLeftLeg) this.soldierLeftLeg.rotation.x = Math.sin(this.crawlCycle) * 0.45;
+          if (this.soldierRightLeg) this.soldierRightLeg.rotation.x = -Math.sin(this.crawlCycle) * 0.45;
+
+          this.footstepTimer -= dt;
+          if (this.footstepTimer <= 0) {
+            this.footstepTimer = 0.42;
+            soundManager.playHumanFootstep(false, true);
+          }
+        } else {
+          if (this.soldierLeftLeg) this.soldierLeftLeg.rotation.x = 0;
+          if (this.soldierRightLeg) this.soldierRightLeg.rotation.x = 0;
+        }
+      } else if (this.playerStance === 'CROUCH') {
+        // Low Tactical Crouch
+        this.soldierGroup.position.y = THREE.MathUtils.damp(this.soldierGroup.position.y, -0.32, 12, dt);
+        this.soldierGroup.rotation.x = THREE.MathUtils.damp(this.soldierGroup.rotation.x, 0.22, 12, dt);
+
+        if (speed > 0.3) {
+          this.runCycle += dt * 8;
+          if (this.soldierLeftLeg) this.soldierLeftLeg.rotation.x = Math.sin(this.runCycle) * 0.55;
+          if (this.soldierRightLeg) this.soldierRightLeg.rotation.x = -Math.sin(this.runCycle) * 0.55;
+
+          this.footstepTimer -= dt;
+          if (this.footstepTimer <= 0) {
+            this.footstepTimer = 0.36;
+            soundManager.playHumanFootstep(false, false);
+          }
+        } else {
+          if (this.soldierLeftLeg) this.soldierLeftLeg.rotation.x = 0;
+          if (this.soldierRightLeg) this.soldierRightLeg.rotation.x = 0;
+        }
       } else {
-        if (this.soldierLeftLeg) this.soldierLeftLeg.rotation.x = THREE.MathUtils.damp(this.soldierLeftLeg.rotation.x, 0, 10, dt);
-        if (this.soldierRightLeg) this.soldierRightLeg.rotation.x = THREE.MathUtils.damp(this.soldierRightLeg.rotation.x, 0, 10, dt);
+        // Standard Standing Stance
+        this.soldierGroup.position.y = THREE.MathUtils.damp(this.soldierGroup.position.y, 0, 12, dt);
+        this.soldierGroup.rotation.x = THREE.MathUtils.damp(this.soldierGroup.rotation.x, 0, 12, dt);
+
+        if (speed > 0.4) {
+          this.runCycle += dt * (isBoosting ? 16 : 10);
+          if (this.soldierLeftLeg) this.soldierLeftLeg.rotation.x = Math.sin(this.runCycle) * 0.75;
+          if (this.soldierRightLeg) this.soldierRightLeg.rotation.x = -Math.sin(this.runCycle) * 0.75;
+
+          this.footstepTimer -= dt;
+          if (this.footstepTimer <= 0) {
+            this.footstepTimer = isBoosting ? 0.22 : 0.32;
+            soundManager.playHumanFootstep(isBoosting, false);
+          }
+        } else {
+          // Idle human breathing chest sway
+          this.soldierGroup.position.y = Math.sin(time * 2.4) * 0.02;
+          if (this.soldierLeftLeg) this.soldierLeftLeg.rotation.x = THREE.MathUtils.damp(this.soldierLeftLeg.rotation.x, 0, 10, dt);
+          if (this.soldierRightLeg) this.soldierRightLeg.rotation.x = THREE.MathUtils.damp(this.soldierRightLeg.rotation.x, 0, 10, dt);
+        }
       }
 
       // Smooth gun recoil recovery
@@ -1354,6 +2354,17 @@ export class GameEngine {
     });
   }
 
+  private updateFloatingDamage(dt: number) {
+    for (let i = this.floatingDamageItems.length - 1; i >= 0; i--) {
+      const item = this.floatingDamageItems[i];
+      item.life -= dt * 1.25;
+      item.worldPos.y += dt * 1.8;
+      if (item.life <= 0) {
+        this.floatingDamageItems.splice(i, 1);
+      }
+    }
+  }
+
   private spawnEnemyLaser(origin: THREE.Vector3, target: THREE.Vector3, speed = 40, damage = 14) {
     const dir = _vecA.subVectors(target, origin).normalize();
     const geo = new THREE.CylinderGeometry(0.06, 0.06, 1.2, 6);
@@ -1437,6 +2448,25 @@ export class GameEngine {
     enemy.hp -= amount;
     soundManager.playHitmarker(isHeadshot);
 
+    this.lastHitTime = Date.now();
+    this.lastHitHeadshot = isHeadshot;
+    this.lastHitDamage = amount;
+
+    this.floatingDamageItems.push({
+      id: Math.random(),
+      worldPos: hitPos ? hitPos.clone() : enemy.group.position.clone().add(new THREE.Vector3(0, 1.6, 0)),
+      damage: Math.round(amount),
+      isHeadshot,
+      life: 1.0,
+    });
+
+    this.notifyStats();
+
+    this.logCombat(
+      isHeadshot ? `Critical Hit! -${Math.round(amount)} HP` : `Hit: -${Math.round(amount)} HP`,
+      isHeadshot ? 'damage' : 'info'
+    );
+
     if (hitPos) {
       this.spawnImpactSparks(hitPos, isHeadshot ? 0xff0044 : 0xffdd44);
     }
@@ -1457,12 +2487,17 @@ export class GameEngine {
     const points = enemy.type === 'boss' ? 3000 : enemy.type === 'tank' ? 650 : 200;
     this.score += points * this.combo;
 
+    const xpReward = enemy.type === 'boss' ? 1200 : enemy.type === 'tank' ? 350 : 120;
+    this.addXp(Math.round(xpReward * (isHeadshot ? 1.5 : 1.0)));
+
     // Tactical kill feed message
     const headshotTag = isHeadshot ? ' (Headshot 🎯)' : '';
     if (enemy.type === 'soldier') {
       this.killFeed.unshift(`🎖️ Akram eliminated [Enemy Soldier] with ${this.activeWeapon.nameEn}${headshotTag}`);
     } else if (enemy.type === 'tank') {
       this.killFeed.unshift(`💥 Akram destroyed [Armored Battle Tank] with ${this.activeWeapon.nameEn}`);
+    } else if (enemy.type === 'apc') {
+      this.killFeed.unshift(`🚙 Akram destroyed [Combat Armored APC] with ${this.activeWeapon.nameEn}`);
     } else if (enemy.type === 'boss') {
       this.killFeed.unshift(`🏆 Akram destroyed [Citadel Dreadnought Super Tank]!`);
     }
@@ -1471,9 +2506,40 @@ export class GameEngine {
       this.killFeed.pop();
     }
 
-    // Increase combo
+    const targetName =
+      enemy.type === 'boss'
+        ? 'Citadel Dreadnought'
+        : enemy.type === 'tank'
+        ? 'Armored Tank'
+        : enemy.type === 'apc'
+        ? 'Combat APC'
+        : 'Enemy Soldier';
+    this.logCombat(`Target Destroyed: ${targetName}`, 'kill');
+
+    const victimName =
+      enemy.type === 'boss'
+        ? 'Citadel Dreadnought 🏆'
+        : enemy.type === 'tank'
+        ? 'Armored Tank 💥'
+        : enemy.type === 'apc'
+        ? 'Combat APC 🚙'
+        : 'Enemy Soldier 👤';
+    this.killEvents.unshift({
+      id: Math.random().toString(),
+      killer: 'Akram 🎖️',
+      victim: victimName,
+      weaponName: this.activeWeapon.nameEn,
+      isHeadshot,
+      time: Date.now(),
+    });
+    if (this.killEvents.length > 5) {
+      this.killEvents.pop();
+    }
+
+    // Increase combo & play escalating pitch kill streak audio feedback
     this.combo = Math.min(10, this.combo + 1);
     this.comboTimer = 5.0;
+    soundManager.playKillStreak(this.combo);
 
     if (this.score > this.highScore) {
       this.highScore = this.score;
@@ -1620,6 +2686,24 @@ export class GameEngine {
             this.spawnEnemyLaser(_vecB, this.playerPos, 48, 24);
           });
           soundManager.playExplosion(1.5);
+        }
+      } else if (enemy.type === 'apc') {
+        // Armored Personnel Carrier: Flank player, rotate autocannon turret, fire 3-round burst
+        if (dist > 18) {
+          enemy.group.position.addScaledVector(_vecA, enemy.speed * dt);
+        }
+        enemy.group.lookAt(this.playerPos.x, enemy.group.position.y, this.playerPos.z);
+        if (enemy.turret) {
+          enemy.turret.lookAt(this.playerPos.x, enemy.turret.position.y + 0.45, this.playerPos.z);
+        }
+
+        enemy.fireCooldown -= dt;
+        if (enemy.fireCooldown <= 0 && dist < 48) {
+          enemy.fireCooldown = 2.8;
+          // Rapid autocannon burst
+          _vecB.copy(enemy.group.position).add(new THREE.Vector3(0, 1.3, 0));
+          this.spawnEnemyLaser(_vecB, this.playerPos, 50, 15);
+          soundManager.playLaser(0.8);
         }
       }
     });
@@ -1790,10 +2874,32 @@ export class GameEngine {
     // 1. Orbit and Free Pan Camera Modes
     if (this.cameraMode === 'ORBIT' || this.cameraMode === 'FREE_PAN') {
       if (this.cameraMode === 'ORBIT') {
-        // Orbit smoothly around player hovercraft
         this.orbitControls.target.lerp(this.playerPos, dt * 6);
       }
       this.orbitControls.update();
+      return;
+    }
+
+    // 2. Majestic 360° Panoramic Vista Camera Mode
+    if (this.cameraMode === 'PANORAMIC') {
+      const panoTargetFov = 92;
+      if (Math.abs(this.camera.fov - panoTargetFov) > 0.05) {
+        this.camera.fov = THREE.MathUtils.damp(this.camera.fov, panoTargetFov, 10, dt);
+        this.camera.updateProjectionMatrix();
+      }
+
+      // High vantage pull-back showing mountain horizons, air theater, and ground troops
+      _vecA.set(Math.sin(this.playerRot), 0, Math.cos(this.playerRot));
+      _vecB.copy(this.playerPos).addScaledVector(_vecA, -17.5);
+      _vecB.y += 8.2;
+
+      this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, _vecB.x, 6, dt);
+      this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, _vecB.y, 6, dt);
+      this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, _vecB.z, 6, dt);
+
+      _vecC.copy(this.playerPos).addScaledVector(_vecA, 14.0);
+      _vecC.y += 2.2;
+      this.camera.lookAt(_vecC);
       return;
     }
 
@@ -1803,7 +2909,7 @@ export class GameEngine {
       this.camera.updateProjectionMatrix();
     }
 
-    // 2. Dynamic Chase Camera (Default) with spring follow and roll damping
+    // 3. Dynamic Chase Camera (Default) with spring follow and roll damping
     const followDist = this.isScoped ? 3.8 : 9.0;
     const followHeight = this.isScoped ? 1.9 : 4.2;
 
@@ -1888,6 +2994,7 @@ export class GameEngine {
         empMax: this.empMax,
         score: this.score,
         combo: this.combo,
+        comboTimer: this.comboTimer,
         highScore: this.highScore,
         wave: this.wave,
         kills: this.kills,
@@ -1909,16 +3016,80 @@ export class GameEngine {
         reloadProgress: this.isReloading ? Math.max(0, 1 - this.reloadTimer / (this.reloadTotalDuration || 1.8)) : 0,
         isScoped: this.isScoped,
         playerRigMode: this.playerRigMode,
+        playerStance: this.playerStance,
+        isPanoramic: this.cameraMode === 'PANORAMIC',
+        isCinematicLetterbox: this.isCinematicLetterbox,
+        jetCooldown: Math.max(0, this.jetCooldownTimer),
+        reinforcementsCooldown: Math.max(0, this.reinforcementsCooldownTimer),
+        combatBranches: {
+          jets: Math.max(2, this.panoramicPatrolJets.length + this.activeJets.length),
+          tanks: this.enemies.filter((e) => e.type === 'tank' || e.type === 'boss').length,
+          apcs: this.enemies.filter((e) => e.type === 'apc').length,
+          soldiers: this.enemies.filter((e) => e.type === 'soldier').length,
+        },
         helmetLevel: this.helmetLevel,
         vestLevel: this.vestLevel,
         killFeed: [...this.killFeed],
-        enemies: this.enemies.map((e) => ({
-          id: e.id,
-          x: e.group.position.x,
-          z: e.group.position.z,
-          type: e.type,
-          hpRatio: Math.max(0, e.hp / e.maxHp),
-        })),
+        weaponHeat: this.weaponHeat,
+        isOverheated: this.isOverheated,
+        crosshairSpread: this.crosshairSpread,
+        killEvents: [...this.killEvents],
+        missionTime: this.missionTime,
+        missionCountdown: this.missionCountdown,
+        xp: this.xp,
+        nextLevelXp: this.nextLevelXp,
+        playerLevel: this.playerLevel,
+        combatIntensity: 0.5,
+        combatLog: [...this.combatLogMessages],
+        droneActive: this.droneActive,
+        droneCooldown: Math.max(0, this.droneCooldownTimer),
+        weather: {
+          type: this.currentWeather,
+          nameAr: WEATHER_CONFIGS[this.currentWeather].nameAr,
+          nameEn: WEATHER_CONFIGS[this.currentWeather].nameEn,
+          icon: WEATHER_CONFIGS[this.currentWeather].icon,
+          visibilityPct: WEATHER_CONFIGS[this.currentWeather].visibilityPct,
+          windSpeedKmh: WEATHER_CONFIGS[this.currentWeather].windSpeedKmh,
+          windDirection: WEATHER_CONFIGS[this.currentWeather].windDirection,
+          physicsEffectAr: WEATHER_CONFIGS[this.currentWeather].physicsEffectAr,
+          nextChangeSeconds: Math.max(0, Math.round(this.weatherTimer)),
+        },
+        lastHitTime: this.lastHitTime,
+        lastHitHeadshot: this.lastHitHeadshot,
+        lastHitDamage: this.lastHitDamage,
+        lockedTargetEnemyId: this.lockedTargetEnemyId,
+        enemies: this.enemies.map((e) => {
+          const v = _vecB.copy(e.group.position);
+          v.y += e.type === 'boss' ? 3.0 : 1.6;
+          v.project(this.camera);
+          const p2d = new THREE.Vector2(this.playerPos.x, this.playerPos.z);
+          const e2d = new THREE.Vector2(e.group.position.x, e.group.position.z);
+          const dist = p2d.distanceTo(e2d);
+          return {
+            id: e.id,
+            x: e.group.position.x,
+            z: e.group.position.z,
+            type: e.type,
+            hpRatio: Math.max(0, e.hp / e.maxHp),
+            screenX: (v.x * 0.5 + 0.5) * (this.container.clientWidth || window.innerWidth),
+            screenY: (-(v.y * 0.5) + 0.5) * (this.container.clientHeight || window.innerHeight),
+            isBehind: v.z > 1.0,
+            distance: Math.round(dist),
+          };
+        }),
+        floatingDamage: this.floatingDamageItems.map((item) => {
+          const v = _vecA.copy(item.worldPos);
+          v.project(this.camera);
+          return {
+            id: item.id,
+            damage: item.damage,
+            isHeadshot: item.isHeadshot,
+            screenX: (v.x * 0.5 + 0.5) * window.innerWidth,
+            screenY: (-(v.y * 0.5) + 0.5) * window.innerHeight,
+            isBehind: v.z > 1.0,
+            life: item.life,
+          };
+        }),
       },
       this.phase
     );

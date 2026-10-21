@@ -1783,3 +1783,241 @@ export function createMilitaryOilDrum(): THREE.Group {
 
   return group;
 }
+
+/**
+ * SUPERSONIC MILITARY FIGHTER JET (طائرة حربية نفاثة مقاتلة)
+ * Multi-role air superiority / Close Air Support fighter jet for panoramic air combat
+ */
+export function createSupersonicFighterJet(mats: ModelMaterials): {
+  group: THREE.Group;
+  afterburners: THREE.Mesh[];
+  missiles: THREE.Group[];
+  contrails: THREE.Vector3[];
+} {
+  const group = new THREE.Group();
+  const afterburners: THREE.Mesh[] = [];
+  const missiles: THREE.Group[] = [];
+
+  const jetCamoMat = new THREE.MeshStandardMaterial({
+    color: 0x475569, // Slate air superiority grey
+    roughness: 0.45,
+    metalness: 0.85,
+  });
+
+  const jetCockpitMat = new THREE.MeshStandardMaterial({
+    color: 0x06b6d4, // Cyan iridescent canopy
+    roughness: 0.1,
+    metalness: 0.95,
+  });
+
+  // 1. Sleek Aerodynamic Fuselage
+  const noseGeo = new THREE.ConeGeometry(0.55, 3.8, 12);
+  noseGeo.rotateX(Math.PI / 2);
+  noseGeo.scale(1, 0.65, 1);
+  const nose = new THREE.Mesh(noseGeo, jetCamoMat);
+  nose.position.set(0, 0, 3.2);
+  nose.castShadow = true;
+  group.add(nose);
+
+  const bodyGeo = new THREE.BoxGeometry(1.4, 0.75, 5.2);
+  const body = new THREE.Mesh(bodyGeo, jetCamoMat);
+  body.position.set(0, 0, -0.6);
+  body.castShadow = true;
+  group.add(body);
+
+  // 2. Tinted Bubble Cockpit Canopy
+  const canopyGeo = new THREE.SphereGeometry(0.42, 16, 12);
+  canopyGeo.scale(0.8, 0.65, 2.2);
+  const canopy = new THREE.Mesh(canopyGeo, jetCockpitMat);
+  canopy.position.set(0, 0.48, 1.4);
+  group.add(canopy);
+
+  // 3. Swept Delta Wings (Left & Right)
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0, 0);
+  wingShape.lineTo(4.4, -2.4);
+  wingShape.lineTo(4.5, -3.4);
+  wingShape.lineTo(0.4, -2.6);
+  wingShape.closePath();
+
+  const wingGeo = new THREE.ExtrudeGeometry(wingShape, {
+    depth: 0.08,
+    bevelEnabled: true,
+    bevelSize: 0.02,
+    bevelThickness: 0.02,
+  });
+  wingGeo.rotateX(Math.PI / 2);
+
+  const leftWing = new THREE.Mesh(wingGeo, jetCamoMat);
+  leftWing.position.set(0.65, 0.05, 0.4);
+  leftWing.castShadow = true;
+  group.add(leftWing);
+
+  const rightWing = new THREE.Mesh(wingGeo, jetCamoMat);
+  rightWing.scale.set(-1, 1, 1);
+  rightWing.position.set(-0.65, 0.05, 0.4);
+  rightWing.castShadow = true;
+  group.add(rightWing);
+
+  // 4. Twin Canted Vertical Stabilizers (Fins)
+  const finGeo = new THREE.BoxGeometry(0.08, 1.4, 1.6);
+  const leftFin = new THREE.Mesh(finGeo, jetCamoMat);
+  leftFin.position.set(0.65, 0.85, -2.4);
+  leftFin.rotation.z = -0.22;
+  leftFin.rotation.y = 0.05;
+  group.add(leftFin);
+
+  const rightFin = new THREE.Mesh(finGeo, jetCamoMat);
+  rightFin.position.set(-0.65, 0.85, -2.4);
+  rightFin.rotation.z = 0.22;
+  rightFin.rotation.y = -0.05;
+  group.add(rightFin);
+
+  // 5. Horizontal Tail Stabilizers
+  const tailGeo = new THREE.BoxGeometry(1.6, 0.06, 1.2);
+  const leftTail = new THREE.Mesh(tailGeo, jetCamoMat);
+  leftTail.position.set(1.4, 0.05, -2.9);
+  leftTail.rotation.y = 0.2;
+  group.add(leftTail);
+
+  const rightTail = new THREE.Mesh(tailGeo, jetCamoMat);
+  rightTail.position.set(-1.4, 0.05, -2.9);
+  rightTail.rotation.y = -0.2;
+  group.add(rightTail);
+
+  // 6. Dual Turbofan Afterburner Exhausts with Glowing Fire Cones
+  const exhaustGeo = new THREE.CylinderGeometry(0.35, 0.38, 0.9, 12);
+  exhaustGeo.rotateX(Math.PI / 2);
+  const flameGeo = new THREE.ConeGeometry(0.28, 1.8, 12);
+  flameGeo.rotateX(-Math.PI / 2);
+
+  [-0.45, 0.45].forEach((x) => {
+    const exhaust = new THREE.Mesh(exhaustGeo, mats.metalChassis);
+    exhaust.position.set(x, 0, -3.4);
+    group.add(exhaust);
+
+    const flame = new THREE.Mesh(flameGeo, mats.exhaustFlame);
+    flame.position.set(x, 0, -4.5);
+    group.add(flame);
+    afterburners.push(flame);
+  });
+
+  // 7. Wingtip & Underwing Guided Missiles
+  const missileLocations = [
+    [-3.8, -0.05, -1.8],
+    [-2.2, -0.15, -0.8],
+    [2.2, -0.15, -0.8],
+    [3.8, -0.05, -1.8],
+  ];
+
+  missileLocations.forEach(([mx, my, mz]) => {
+    const mGroup = new THREE.Group();
+    mGroup.position.set(mx, my, mz);
+
+    const mBody = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.4, 8), mats.gunMetal);
+    mBody.rotateX(Math.PI / 2);
+    mGroup.add(mBody);
+
+    const mNose = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.35, 8), mats.glowCrimson);
+    mNose.rotateX(-Math.PI / 2);
+    mNose.position.z = 0.85;
+    mGroup.add(mNose);
+
+    group.add(mGroup);
+    missiles.push(mGroup);
+  });
+
+  const contrails = [
+    new THREE.Vector3(-4.4, 0.05, -2.4),
+    new THREE.Vector3(4.4, 0.05, -2.4),
+  ];
+
+  group.scale.set(1.4, 1.4, 1.4);
+  return { group, afterburners, missiles, contrails };
+}
+
+/**
+ * 8x8 ARMORED PERSONNEL CARRIER / COMBAT VEHICLE (مدرعة قتالية تكتيكية 8x8)
+ * Heavy armored transport and rapid fire support vehicle
+ */
+export function createArmoredPersonnelCarrier(mats: ModelMaterials): {
+  group: THREE.Group;
+  turret: THREE.Group;
+  cannonBarrel: THREE.Mesh;
+  wheels: THREE.Mesh[];
+} {
+  const group = new THREE.Group();
+  const wheels: THREE.Mesh[] = [];
+
+  const apcMat = new THREE.MeshStandardMaterial({
+    color: 0x475560, // Camouflage desert slate
+    roughness: 0.6,
+    metalness: 0.8,
+  });
+
+  // 1. Armored V-Hull Chassis (Deflects blasts)
+  const hullGeo = new THREE.BoxGeometry(2.5, 1.1, 5.6);
+  const hull = new THREE.Mesh(hullGeo, apcMat);
+  hull.position.y = 1.0;
+  hull.castShadow = true;
+  group.add(hull);
+
+  // Slanted front glacis plate
+  const hoodGeo = new THREE.BoxGeometry(2.4, 0.5, 1.6);
+  hoodGeo.rotateX(Math.PI / 5);
+  const hood = new THREE.Mesh(hoodGeo, apcMat);
+  hood.position.set(0, 1.15, 2.7);
+  hood.castShadow = true;
+  group.add(hood);
+
+  // 2. 8 Heavy Combat All-Terrain Wheels (4 per side)
+  const tireGeo = new THREE.CylinderGeometry(0.44, 0.44, 0.42, 16);
+  tireGeo.rotateZ(Math.PI / 2);
+
+  for (let side = -1; side <= 1; side += 2) {
+    for (let w = 0; w < 4; w++) {
+      const wz = -2.1 + w * 1.4;
+      const wheel = new THREE.Mesh(tireGeo, mats.gunMetal);
+      wheel.position.set(side * 1.42, 0.48, wz);
+      wheel.castShadow = true;
+      group.add(wheel);
+      wheels.push(wheel);
+
+      // Hubcap rim
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.44, 8), mats.metalChassis);
+      rim.rotateZ(Math.PI / 2);
+      rim.position.set(side * 1.42, 0.48, wz);
+      group.add(rim);
+    }
+  }
+
+  // 3. Remote Weapon Station (RWS) Machine Gun Turret on Roof
+  const turret = new THREE.Group();
+  turret.position.set(0, 1.7, 0.3);
+
+  const tBase = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.7, 0.35, 12), mats.metalChassis);
+  turret.add(tBase);
+
+  const gunBox = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.35, 0.75), apcMat);
+  gunBox.position.set(0, 0.32, 0.1);
+  turret.add(gunBox);
+
+  // 30mm Autocannon Barrel
+  const barrelGeo = new THREE.CylinderGeometry(0.06, 0.07, 1.8, 8);
+  barrelGeo.rotateX(Math.PI / 2);
+  barrelGeo.translate(0, 0, 0.9);
+  const cannonBarrel = new THREE.Mesh(barrelGeo, mats.gunMetal);
+  cannonBarrel.position.set(0, 0.32, 0.45);
+  turret.add(cannonBarrel);
+
+  group.add(turret);
+
+  // 4. Tactical Radio Whip Antenna
+  const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.02, 2.2, 4), mats.metalChassis);
+  ant.position.set(-1.0, 2.4, -2.4);
+  group.add(ant);
+
+  group.scale.set(1.05, 1.05, 1.05);
+  return { group, turret, cannonBarrel, wheels };
+}
+
